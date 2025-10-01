@@ -7,7 +7,7 @@ import plotly.express as px
 st.set_page_config(page_title="Business Plan Scuola Internazionale", layout="wide")
 
 # --- BLOCCO PASSWORD ---
-PASSWORD = "Scuola123"
+PASSWORD = "scuola"
 if "password_correct" not in st.session_state:
     st.session_state.password_correct = False
 
