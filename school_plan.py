@@ -1,120 +1,171 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
+import plotly.express as px
 
-st.set_page_config(page_title="Business Plan Scuola", layout="wide")
-st.title("Business Plan Scuola Superiore — Versione Avanzata")
+# --- CONFIG ---
+st.set_page_config(page_title="Business Plan Scuola Internazionale", layout="wide")
 
-# --- SCENARIO ---
-scenario = st.selectbox("Seleziona scenario", ["Pessimistico", "Atteso", "Ottimistico"])
-growth_modifier = {"Pessimistico": 0.8, "Atteso": 1.0, "Ottimistico": 1.2}[scenario]
+# --- BLOCCO PASSWORD ---
+PASSWORD = "Scuola123"
+if "password_correct" not in st.session_state:
+    st.session_state.password_correct = False
 
-# --- INPUT PRINCIPALI ---
-col1, col2 = st.columns(2)
+def check_password():
+    if st.session_state.password_input == PASSWORD:
+        st.session_state.password_correct = True
+    else:
+        st.error("❌ Password errata!")
 
-with col1:
-    years = st.slider("Anni di proiezione", 3, 12, 7)
-    initial_students = st.number_input("Studenti iniziali", 5, 200, 25)
-    annual_growth = st.slider("Crescita % annua studenti", 0, 50, 15)
-    tuition = st.number_input("Retta annua per studente (€)", 1000, 10000, 5500)
-    teaching_hours_per_student = st.number_input("Ore didattiche per studente/anno", 50, 300, 150)
+if not st.session_state.password_correct:
+    st.sidebar.title("🔑 Login")
+    st.sidebar.text_input("Inserisci password:", type="password", key="password_input")
+    st.sidebar.button("Login", on_click=check_password)
 
-with col2:
-    teachers_first_year = st.number_input("Insegnanti primo anno", 1, 50, 5)
-    hours_per_teacher_week = st.number_input("Ore/settimana per insegnante", 6, 40, 20)
-    weeks_per_year = st.number_input("Settimane/anno", 1, 52, 36)
-    cost_per_teacher_hour = st.number_input("Costo/ora insegnante (€)", 10, 200, 30)
+else:
+    st.title("🏫 Modello Business Plan - Scuola Internazionale")
+    st.markdown("Un modello interattivo per proiezioni e analisi economico-finanziarie 📊")
 
-# --- COSTI ---
-fixed_costs = st.number_input("Costi fissi annui (€)", 10000, 500000, 80000)
-variable_cost_per_student = st.number_input("Costi variabili per studente (€)", 0, 2000, 300)
+    # --- SIDEBAR: Input Condizioni principali ---
+    st.sidebar.header("⚙️ Condizioni principali")
+    inputs = {
+        "Numero studenti primo anno": st.sidebar.number_input("👩‍🎓 Numero studenti", 1, 500, 15),
+        "Crescita annua (%)": st.sidebar.slider("📈 Crescita annua (%)", 0, 100, 50),
+        "Retta/studente (€)": st.sidebar.number_input("💶 Retta per studente", 1000, 20000, 4000),
+        "Ore/settimana per insegnante": st.sidebar.number_input("⏱ Ore/settimana insegnante", 1, 40, 25),
+        "Settimane/anno": st.sidebar.number_input("📅 Settimane annue", 1, 52, 33),
+        "Costo/ora insegnante (€)": st.sidebar.number_input("💰 Costo orario insegnante", 10, 200, 30),
+        "Costi fissi annui (€)": st.sidebar.number_input("🏢 Costi fissi annui", 0, 1_000_000, 50000),
+        "Investimento iniziale (€)": st.sidebar.number_input("💵 Investimento iniziale", 0, 5_000_000, 5000000)
+    }
 
-# --- FINANZIAMENTO ---
-initial_investment = st.number_input("Investimento iniziale (€)", 0, 1000000, 200000)
-loan_rate = st.number_input("Tasso annuo (%)", 0.0, 10.0, 4.5)
-loan_years = st.number_input("Anni rimborso", 1, 20, 7)
+    # --- CALCOLI ---
+    years = 7
+    students_year = inputs["Numero studenti primo anno"]
+    data = []
 
-# --- FUNZIONI ---
-def annual_loan_payment(amount, rate_pct, n_years):
-    if n_years == 0 or amount <= 0:
-        return 0
-    r = rate_pct / 100
-    return (r * amount) / (1 - (1 + r)**(-n_years))
+    for y in range(1, years+1):
+        revenue = students_year * inputs["Retta/studente (€)"]
 
-loan_payment = annual_loan_payment(initial_investment, loan_rate, loan_years)
+        # 📌 Insegnanti: rapporto 10,4 studenti per docente, minimo 4
+        required_teachers = max(4, int(np.ceil(students_year / 10.4)))
+        hours_per_teacher_year = inputs["Ore/settimana per insegnante"] * inputs["Settimane/anno"]
+        payroll = required_teachers * hours_per_teacher_year * inputs["Costo/ora insegnante (€)"]
 
-# --- CALCOLI ---
-data = []
-students = initial_students
-cash_cum = -initial_investment
+        variable_costs = students_year * 300
+        fixed_costs = inputs["Costi fissi annui (€)"]
+        total_costs = payroll + variable_costs + fixed_costs
+        ebit = revenue - total_costs
 
-for y in range(1, years+1):
-    revenue = students * tuition
+        data.append({
+            "Anno": y,
+            "Studenti": round(students_year),
+            "Insegnanti": required_teachers,
+            "Ricavi": round(revenue),
+            "Stipendi": round(payroll),
+            "Costi Variabili": round(variable_costs),
+            "Costi Fissi": round(fixed_costs),
+            "Totale Costi": round(total_costs),
+            "EBIT": round(ebit)
+        })
 
-    # ore totali necessarie e insegnanti richiesti
-    teaching_hours_needed = students * teaching_hours_per_student
-    hours_per_teacher_year = hours_per_teacher_week * weeks_per_year
-    required_teachers = max(1, int(np.ceil(teaching_hours_needed / hours_per_teacher_year)))
+        students_year *= (1 + inputs["Crescita annua (%)"] / 100)
 
-    payroll = required_teachers * hours_per_teacher_year * cost_per_teacher_hour
-    var_costs = students * variable_cost_per_student
-    financing = loan_payment if y <= loan_years else 0
-    total_costs = payroll + var_costs + fixed_costs + financing
-    ebit = revenue - total_costs
-    cash_cum += ebit
+    df_result = pd.DataFrame(data)
 
-    data.append({
-        "Anno": y,
-        "Studenti": round(students),
-        "Insegnanti": required_teachers,
-        "Ricavi": round(revenue),
-        "Payroll": round(payroll),
-        "CostiVariabili": round(var_costs),
-        "CostiFissi": round(fixed_costs),
-        "Finanziamento": round(financing),
-        "TotaleCosti": round(total_costs),
-        "EBIT": round(ebit),
-        "CashCumulato": round(cash_cum)
-    })
+    # --- KPI CARDS ---
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("👩‍🎓 Studenti 1° anno", inputs["Numero studenti primo anno"])
+    col2.metric("💶 Retta per studente", f"€ {inputs['Retta/studente (€)']:,}")
+    col3.metric("📈 EBIT anno 7", f"€ {df_result.iloc[-1]['EBIT']:,}")
+    col4.metric("🏢 Costi fissi annui", f"€ {inputs['Costi fissi annui (€)']:,}")
 
-    students *= (1 + annual_growth / 100 * growth_modifier)
+    # --- TABS ---
+    tab1, tab2, tab3 = st.tabs(["📊 Proiezioni", "📈 Grafici", "📑 Conto Economico"])
 
-df = pd.DataFrame(data)
+    # --- TAB 1 ---
+    with tab1:
+        st.subheader("📊 Proiezioni finanziarie")
+        st.dataframe(df_result, use_container_width=True)
 
-# --- OUTPUT ---
-st.subheader("Tabella Proiezioni")
-st.dataframe(df)
+    # --- TAB 2 ---
+    with tab2:
+        st.subheader("📈 Andamento Ricavi / Costi / EBIT")
+        fig_line = px.line(df_result, x="Anno", y=["Ricavi", "Totale Costi", "EBIT"], markers=True)
+        st.plotly_chart(fig_line, use_container_width=True)
 
-# --- GRAFICI ---
-st.subheader("Grafico Ricavi vs Costi vs EBIT")
-fig1, ax1 = plt.subplots(figsize=(8,4))
-ax1.plot(df["Anno"], df["Ricavi"], label="Ricavi")
-ax1.plot(df["Anno"], df["TotaleCosti"], label="Totale Costi")
-ax1.plot(df["Anno"], df["EBIT"], label="EBIT")
-ax1.set_xlabel("Anno")
-ax1.set_ylabel("€")
-ax1.legend()
-st.pyplot(fig1)
+        st.subheader("📊 Struttura costi")
+        fig_bar = px.bar(df_result, x="Anno", y=["Stipendi", "Costi Fissi", "Costi Variabili"], barmode="stack")
+        st.plotly_chart(fig_bar, use_container_width=True)
 
-st.subheader("Composizione Costi per anno")
-fig2, ax2 = plt.subplots(figsize=(8,4))
-ax2.bar(df["Anno"], df["Payroll"], label="Payroll")
-ax2.bar(df["Anno"], df["CostiFissi"], bottom=df["Payroll"], label="Fissi")
-ax2.bar(df["Anno"], df["CostiVariabili"], bottom=df["Payroll"]+df["CostiFissi"], label="Variabili")
-ax2.set_xlabel("Anno")
-ax2.set_ylabel("€")
-ax2.legend()
-st.pyplot(fig2)
+        st.subheader("📉 Rapporto studenti/insegnante")
+        df_result["Studenti per Insegnante"] = df_result["Studenti"] / df_result["Insegnanti"]
+        fig_ratio = px.line(df_result, x="Anno", y="Studenti per Insegnante", markers=True)
+        st.plotly_chart(fig_ratio, use_container_width=True)
 
-st.subheader("Cash Flow Cumulato")
-fig3, ax3 = plt.subplots(figsize=(8,4))
-ax3.plot(df["Anno"], df["CashCumulato"], marker='o')
-ax3.axhline(0, color='red', linestyle='--')
-ax3.set_xlabel("Anno")
-ax3.set_ylabel("€")
-st.pyplot(fig3)
+    # --- TAB 3 ---
+    with tab3:
+        st.subheader("📑 Conto Economico")
 
-# --- DOWNLOAD CSV ---
-csv = df.to_csv(index=False)
-st.download_button("Scarica CSV", data=csv, file_name="school_projections.csv", mime="text/csv")
+        # Selezione anno
+        selected_year = st.selectbox("Seleziona l'anno:", df_result["Anno"].tolist())
+        row = df_result[df_result["Anno"] == selected_year].iloc[0]
+
+        # --- Calcolo conto economico strutturato ---
+        students_total = row["Studenti"]
+        revenue = row["Ricavi"]
+
+        contributi = 0
+        altri_proventi = 0
+        totale_altri = contributi + altri_proventi
+        totale_valore_produzione = revenue + totale_altri
+
+        # Costi
+        materie_prime = students_total * 50
+        servizi = 20000
+        godimento_beni = 0
+
+        salari = row["Stipendi"]
+        oneri_sociali = salari * 0.3
+        tfr = salari * 0.05
+        quiescenza = salari * 0.02
+        altri_costi_personale = 1000
+        totale_personale = salari + oneri_sociali + tfr + quiescenza + altri_costi_personale
+
+        totale_costi_produzione = materie_prime + servizi + godimento_beni + totale_personale
+        utile = totale_valore_produzione - totale_costi_produzione
+
+        ce_data = {
+            "Voce": [
+                "A) Valore della produzione",
+                "   Ricavi delle vendite e delle prestazioni",
+                "   Altri ricavi e proventi",
+                "      Contributi in conto esercizio",
+                "      Altri proventi",
+                "   Totale altri ricavi e proventi",
+                "Totale valore della produzione",
+                "B) Costi della produzione",
+                "   Per materie prime, sussidiarie, di consumo e merci",
+                "   Per servizi",
+                "   Per godimento di beni di terzi",
+                "   Per il personale",
+                "      a) Salari e stipendi",
+                "      b) Oneri sociali",
+                "      c) Trattamento di fine rapporto",
+                "      d) Trattamento di quiescenza",
+                "      e) Altri costi del personale",
+                "   Totale costi per il personale",
+                "Totale costi della produzione",
+                "Utile (perdita) dell'esercizio"
+            ],
+            "Valore (€)": [
+                "", round(revenue), "", round(contributi), round(altri_proventi), round(totale_altri),
+                round(totale_valore_produzione),
+                "", round(materie_prime), round(servizi), round(godimento_beni), "",
+                round(salari), round(oneri_sociali), round(tfr), round(quiescenza), round(altri_costi_personale),
+                round(totale_personale), round(totale_costi_produzione), round(utile)
+            ]
+        }
+
+        df_ce = pd.DataFrame(ce_data)
+        st.dataframe(df_ce, use_container_width=True)
